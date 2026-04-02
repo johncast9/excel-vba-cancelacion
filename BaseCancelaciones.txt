@@ -1,0 +1,237 @@
+Option Explicit
+
+Sub ProcesarDatosCompleto()
+
+    ' ===========================================================
+    ' CONFIGURACIÓN (MODIFICAR SEGÚN ENTORNO)
+    ' ===========================================================
+    Dim rutaBaseExterna As String
+    Dim rutaAgentes As String
+
+    rutaBaseExterna = "C:\Ruta\A\Base_Externa.xlsx"
+    rutaAgentes = "C:\Ruta\A\Base_Agentes.xlsx"
+
+    ' ===========================================================
+    ' VARIABLES GENERALES
+    ' ===========================================================
+    Dim wb As Workbook, wsDatos As Worksheet, wsAux As Worksheet
+    Dim wbBase As Workbook, wsBase As Worksheet
+    Dim wbAgentes As Workbook, wsAgentes As Worksheet
+
+    Dim ultimaFila As Long, ultimaColumna As Long
+    Dim i As Long, fila As Long
+
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+
+    Set wb = ActiveWorkbook
+    Set wsDatos = wb.Worksheets(1)
+    wsDatos.Name = "Datos"
+
+    ' ===========================================================
+    ' 1) REGLA INICIAL DE NEGOCIO (EJEMPLO)
+    ' ===========================================================
+    ultimaFila = wsDatos.Cells(wsDatos.Rows.Count, "P").End(xlUp).Row
+
+    For i = 2 To ultimaFila
+        If wsDatos.Cells(i, "P").Value = 90 Then
+            wsDatos.Cells(i, "N").Value = "CATEGORIA_ESPECIFICA"
+        End If
+    Next i
+
+    ' ===========================================================
+    ' 2) CREAR / LIMPIAR HOJA AUXILIAR
+    ' ===========================================================
+    On Error Resume Next
+    Set wsAux = wb.Worksheets("Auxiliar")
+    On Error GoTo 0
+
+    If wsAux Is Nothing Then
+        Set wsAux = wb.Worksheets.Add(After:=wsDatos)
+        wsAux.Name = "Auxiliar"
+    Else
+        wsAux.Cells.Clear
+    End If
+
+    ' ===========================================================
+    ' 3) INSERTAR COLUMNAS SI NO EXISTEN
+    ' ===========================================================
+    InsertarColumnasSiNoExisten wsDatos
+
+    ' ===========================================================
+    ' 4) CREAR COLUMNA CALCULADA (MILES)
+    ' ===========================================================
+    CrearColumnaMiles wsDatos
+
+    ' ===========================================================
+    ' 5) GENERAR CRUCES (EJEMPLO DE FILTROS)
+    ' ===========================================================
+    GenerarCruces wsDatos, wsAux
+
+    ' ===========================================================
+    ' 6) CRUCES CON BASE EXTERNA
+    ' ===========================================================
+    Set wbBase = Workbooks.Open(rutaBaseExterna)
+    Set wsBase = wbBase.Worksheets(1)
+
+    CrucesConBaseExterna wsDatos, wsAux, wsBase
+
+    wbBase.Close SaveChanges:=False
+
+    ' ===========================================================
+    ' 7) VLOOKUPS DESDE HOJA AUXILIAR
+    ' ===========================================================
+    AplicarVLookups wsDatos, wsAux
+
+    ' ===========================================================
+    ' 8) DATOS DE AGENTES (BASE EXTERNA)
+    ' ===========================================================
+    Set wbAgentes = Workbooks.Open(rutaAgentes)
+
+    AplicarDatosAgentes wsDatos, wbAgentes
+
+    wbAgentes.Close SaveChanges:=False
+
+    ' ===========================================================
+    ' 9) AJUSTES FINALES (REGLAS DE NEGOCIO)
+    ' ===========================================================
+    AplicarReglasFinales wsDatos
+
+    ' ===========================================================
+    ' 10) CONVERTIR TODO A VALORES
+    ' ===========================================================
+    ConvertirTodoAValores wsDatos
+
+Finalizar:
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+
+    MsgBox "Proceso completado correctamente.", vbInformation
+
+End Sub
+
+' ===========================================================
+' FUNCIONES MODULARES
+' ===========================================================
+
+Private Sub InsertarColumnasSiNoExisten(ws As Worksheet)
+
+    With ws
+        If UCase(.Cells(1, 4).Value) <> "COMENTARIO 1" Then
+            .Columns("D:E").Insert
+            .Range("D1").Value = "COMENTARIO 1"
+            .Range("E1").Value = "COMENTARIO 2"
+        End If
+
+        If UCase(.Cells(1, 6).Value) <> "INDICADOR 1" Then
+            .Columns("F:J").Insert
+            .Range("F1:J1").Value = Array("INDICADOR 1", "INDICADOR 2", "INDICADOR 3", "INDICADOR 4", "INDICADOR 5")
+        End If
+    End With
+
+End Sub
+
+Private Sub CrearColumnaMiles(ws As Worksheet)
+
+    Dim colImporte As Long, colMiles As Long, ultimaFila As Long
+
+    colImporte = BuscarColumna(ws, "IMPORTE")
+    colMiles = BuscarColumna(ws, "MILES")
+
+    If colImporte = 0 Then Exit Sub
+
+    If colMiles = 0 Then
+        ws.Columns(colImporte + 1).Insert
+        ws.Cells(1, colImporte + 1).Value = "MILES"
+        colMiles = colImporte + 1
+    End If
+
+    ultimaFila = ws.Cells(ws.Rows.Count, colImporte).End(xlUp).Row
+
+    ws.Cells(2, colMiles).Formula = "=" & ws.Cells(2, colImporte).Address(False, False) & "/1000"
+    ws.Range(ws.Cells(2, colMiles), ws.Cells(ultimaFila, colMiles)).FillDown
+
+End Sub
+
+Private Sub GenerarCruces(wsDatos As Worksheet, wsAux As Worksheet)
+
+    Dim ultimaFila As Long
+
+    ultimaFila = wsDatos.Cells(wsDatos.Rows.Count, 1).End(xlUp).Row
+
+    ' Ejemplo simple de cruce
+    wsAux.Range("A1").Value = "CLAVE"
+    wsAux.Range("B1").Value = "VALOR"
+
+    wsDatos.Range("A2:A" & ultimaFila).Copy wsAux.Range("A2")
+
+End Sub
+
+Private Sub CrucesConBaseExterna(wsDatos As Worksheet, wsAux As Worksheet, wsBase As Worksheet)
+
+    ' Ejemplo simplificado
+    wsAux.Range("D1").Value = "CRUCE EXTERNO"
+
+End Sub
+
+Private Sub AplicarVLookups(wsDatos As Worksheet, wsAux As Worksheet)
+
+    Dim ultimaFila As Long
+
+    ultimaFila = wsDatos.Cells(wsDatos.Rows.Count, 1).End(xlUp).Row
+
+    wsDatos.Range("F2").Formula = "=VLOOKUP(A2,Auxiliar!A:B,2,0)"
+    wsDatos.Range("F2:F" & ultimaFila).FillDown
+
+End Sub
+
+Private Sub AplicarDatosAgentes(wsDatos As Worksheet, wbAgentes As Workbook)
+
+    Dim wsAgentes As Worksheet
+    Set wsAgentes = wbAgentes.Worksheets(1)
+
+    ' Ejemplo
+    wsDatos.Range("M1").Value = "TIPO"
+
+End Sub
+
+Private Sub AplicarReglasFinales(ws As Worksheet)
+
+    Dim ultimaFila As Long, i As Long
+
+    ultimaFila = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+
+    For i = 2 To ultimaFila
+        If ws.Cells(i, 1).Value <> "" Then
+            ws.Cells(i, 2).Value = "CLASIFICADO"
+        End If
+    Next i
+
+End Sub
+
+Private Sub ConvertirTodoAValores(ws As Worksheet)
+
+    Dim ultimaFila As Long, ultimaColumna As Long
+
+    ultimaFila = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    ultimaColumna = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+
+    ws.Range(ws.Cells(2, 1), ws.Cells(ultimaFila, ultimaColumna)).Value = _
+    ws.Range(ws.Cells(2, 1), ws.Cells(ultimaFila, ultimaColumna)).Value
+
+End Sub
+
+Private Function BuscarColumna(ws As Worksheet, nombreColumna As String) As Long
+
+    Dim i As Long
+
+    For i = 1 To ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+        If UCase(Trim(ws.Cells(1, i).Value)) = UCase(nombreColumna) Then
+            BuscarColumna = i
+            Exit Function
+        End If
+    Next i
+
+    BuscarColumna = 0
+
+End Function

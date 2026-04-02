@@ -1,0 +1,104 @@
+Option Explicit
+
+Sub FiltrarDatosEjemplo()
+
+    ' === Configuración ===
+    Dim rutaArchivo As String
+    rutaArchivo = "C:\Ruta\A\Tu\Archivo.xlsx" ' <-- Modifica esta ruta
+
+    ' === Variables ===
+    Dim wb As Workbook
+    Dim hojaOrigen As Worksheet
+    Dim hojaDestino As Worksheet
+    Dim ultimaFila As Long, ultimaColumna As Long
+    Dim i As Long, j As Long
+    Dim datos As Variant
+    Dim resultado() As Variant
+    Dim filaDestino As Long
+    Dim valorA As String, valorB As String
+
+    On Error GoTo ManejoError
+
+    ' Abrir libro
+    Set wb = Workbooks.Open(rutaArchivo)
+    Set hojaOrigen = wb.Sheets(1) ' O especificar por nombre
+
+    ' Eliminar hoja destino si ya existe
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    wb.Sheets("Datos_Filtrados").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+
+    ' Obtener última fila y columna
+    ultimaFila = hojaOrigen.Cells(hojaOrigen.Rows.Count, 1).End(xlUp).Row
+    ultimaColumna = hojaOrigen.Cells(1, hojaOrigen.Columns.Count).End(xlToLeft).Column
+
+    ' Cargar datos en array
+    datos = hojaOrigen.Range(hojaOrigen.Cells(1, 1), hojaOrigen.Cells(ultimaFila, ultimaColumna)).Value
+
+    ' Preparar array de resultados
+    ReDim resultado(1 To UBound(datos, 1), 1 To ultimaColumna)
+
+    ' Copiar encabezados
+    For j = 1 To ultimaColumna
+        resultado(1, j) = datos(1, j)
+    Next j
+    filaDestino = 2
+
+    ' Lógica de filtrado (columna 1 vs columna 14)
+    For i = 2 To UBound(datos, 1)
+
+        valorA = LimpiarTexto(datos(i, 1))
+        valorB = LimpiarTexto(datos(i, 14))
+
+        If valorA = valorB And valorA <> "" Then
+            For j = 1 To ultimaColumna
+                resultado(filaDestino, j) = datos(i, j)
+            Next j
+            filaDestino = filaDestino + 1
+        End If
+
+    Next i
+
+    ' Crear hoja destino
+    Set hojaDestino = wb.Sheets.Add(After:=hojaOrigen)
+    hojaDestino.Name = "Datos_Filtrados"
+
+    ' Ajustar tamaño del array final
+    Dim resultadoFinal() As Variant
+    ReDim resultadoFinal(1 To filaDestino - 1, 1 To ultimaColumna)
+
+    For i = 1 To filaDestino - 1
+        For j = 1 To ultimaColumna
+            resultadoFinal(i, j) = resultado(i, j)
+        Next j
+    Next i
+
+    ' Volcar datos a la hoja
+    hojaDestino.Range(hojaDestino.Cells(1, 1), hojaDestino.Cells(filaDestino - 1, ultimaColumna)).Value = resultadoFinal
+
+    ' Copiar formato de encabezados
+    hojaOrigen.Rows(1).Copy
+    hojaDestino.Rows(1).PasteSpecial Paste:=xlPasteFormats
+    Application.CutCopyMode = False
+
+    wb.Save
+    wb.Close
+
+    MsgBox "Filtrado completado correctamente.", vbInformation
+    Exit Sub
+
+' === Manejo de errores ===
+ManejoError:
+    MsgBox "Ocurrió un error: " & Err.Description, vbCritical
+
+End Sub
+
+' === Función auxiliar ===
+Private Function LimpiarTexto(valor As Variant) As String
+    Dim temp As String
+    temp = Trim(CStr(valor))
+    temp = Replace(temp, "'", "")
+    LimpiarTexto = temp
+End Function
